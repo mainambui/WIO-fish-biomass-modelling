@@ -2,7 +2,6 @@
 McClanahan TR, Maina JM, Jones K, Graham NAJ (2016) Modeling Reef Fish Biomass, Recovery Potential, and Management Priorities in the Western Indian Ocean PLOSE ONE
 
 In this code:
-Section 1: fish biomass modelling
 I model fish biomass response using gamm;:mgcv package;
 I run these in model selection framework within MuMIn;
 I select the 95% confidence set of models and perform model average;
