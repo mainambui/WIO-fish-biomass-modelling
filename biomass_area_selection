@@ -1,0 +1,49 @@
+##selects and replaces values in  a raster and 3x3 buffer
+##Maina June 9 2015
+
+library(raster)
+library(dismo)
+#set.seed(0)
+#xy <- matrix(rnorm(900, 40, 200),30 , 30)
+#r <- raster(xy)
+#extent(r) <- c(36,37,-3,-2)
+
+#setwd("~/Dropbox/FishBiomassRecoveryPlan/FishBiomass/Recovery_biomass_model_v3/Biomass_AresSelection/")
+setwd("C:/Users/jmbui/Dropbox/FishBiomassRecoveryPlan/Revision_Feb2016/")
+#r<-raster("pred_aug_15")
+r<-raster("pred_rast")
+
+rorig <- r
+x <- r
+#i <- 1
+while (TRUE) {
+    # cell with min value 
+    m <- which.min(x)
+    ## are there, and do you care about ties? Do they have the same level?
+    ## If not, do
+    ## m[1]
+    ## or sample
+    ## m <- sample(m, 1)
+    # focal and four adjacent cells
+    a <- adjacent(r, m, 4, FALSE, include=FALSE)
+    b <- m
+    # exclude those that have already been affected
+    w <- which(!is.na(x[a]))
+    z <- which(!is.na(x[m]))
+    a <- a[w]
+    b <- b[z]
+    # assign the value
+    r[a] <- 10000
+    r[b] <- 20000
+    # set assigned cells to NA
+    x[a] <- NA
+    x[b] <- NA
+    # stop when done
+    if (minValue(x) > 450) break
+    #i <- i + 1
+
+}
+
+plot(r)
+plot(rorig, r)
+writeRaster(r, format="GTiff","degradedclosures.tif",overwrite=TRUE)
