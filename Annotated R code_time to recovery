@@ -1,0 +1,67 @@
+##fitting a recovery time model on wio fish data
+library(gam)
+library(mgcv)
+library(MASS)
+library(lattice)
+library(gamm4)
+library(ggplot2)
+library(nls2)
+library(minpack.lm)
+
+#data prep
+fish.data<-read.csv("~/Dropbox/FishBiomassRecoveryPlan/FishBiomass/Recovery_biomass_model_v3/TimeToRecovery/wiorecovery.csv", header=T)
+fish.data$lnfish.data<-log(fish.data$ave.biomass)
+#exclude very high biomass
+fish.data_sub <- fish.data[which(fish.data$ave.biomass<=2000), ]
+##visualize the xy plot
+op <- par(mfrow = c(1, 1))
+plot(fish.data$Closure_age,fish.data$ave.biomass, pch = 16, xlab = "Age of closure",
+ylab = "Biomass, kg/ha", col = 1, main = "Plot 1")
+par(op)
+
+
+##fitting non linear models (nls) with pre-configured values 
+nls.Ricker = nlsLM(ave.biomass ~ Bo+(a*Closure_age)*exp(-b*Closure_age), data=HCC, start=list(Bo=100, a=138, b=0.048),na.action="na.exclude")
+
+nls.logistic<- nlsLM(ave.biomass ~ k/(1+((k-Bo)/Bo)*exp(-r*Closure_age)),data=HCC,start=list(k=1050,Bo=40,r=0.3),na.action="na.exclude")
+
+nls.assym<-nlsLM(ave.biomass ~k+(Bo-k)*exp(-r*Closure_age),data=HCC,start=list(k=1150,Bo=138,r=0.3),na.action="na.exclude")
+
+summary(nls.Ricker)
+summary(nls.logistic)
+summary(nls.assym)
+
+#get confidence intervals
+confint(nls.Ricker)
+confint(nls.logistic)
+confint(nls.assym)
+
+####fitting preconfigured models in ggplot geom_smooth()
+###high compliance closure data subset
+HCC<-subset(fish.data, Management2 == "High compliance closure")
+LCYC<-subset(fish.data, Management2 == "Low compliance and young closure")
+
+Ricker<-ggplot(data=LCYC, aes(x=Closure_age, y=ave.biomass)) + geom_point() + geom_smooth(method="nls", formula = y ~ Bo+(a*x)*exp(-b*x), se=F, start=list(Bo=100, a=138, b=0.048)) + theme_bw() + theme(panel.border = element_rect(colour = "black"), panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + scale_y_continuous("Biomass, kg/ha") + scale_x_continuous("Time, years")+ ggtitle("Ricker")
+
+logistic<-ggplot(data=LCYC, aes(x=Closure_age, y=ave.biomass)) + geom_point() + geom_smooth(method="nls", formula = y ~ k/(1+((k-Bo)/Bo)*exp(-r*x)),se=F,
+,start=list(k=1050,Bo=138,r=0.3)) + theme_bw() + theme(panel.border = element_rect(colour = "black"), panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + scale_y_continuous("Biomass, kg/ha") + scale_x_continuous("Time, years")+ ggtitle("Logistic")
+
+Asymt<-ggplot(data=LCYC, aes(x=Closure_age, y=ave.biomass)) + geom_point() + geom_smooth(method="nls", formula = y ~ k+(Bo-k)*exp(-r*x),se=F,start=list(k=1150,Bo=138,r=0.3))+ theme_bw() + theme(panel.border = element_rect(colour = "black"), panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) + scale_y_continuous("Biomass, kg/ha") + scale_x_continuous("Time, years")+ ggtitle("Asymt")
+
+##all no gears restricted biomass converted to average value 302.5
+fish.data[fish.data[,"Closure_age"] == 0 & fish.data[,"Management2"] == "No gears restricted" , "ave.biomass"] = 302.5
+
+#plotting figures
+#fig2
+cairo_ps(file='Figure2.eps', width=7, height=7)
+
+ggplot(data=HCC, aes(x=Closure_age, y=ave.biomass)) + geom_point(colour="grey",size = 4) + stat_smooth(method="nlsLM", formula = y ~ Bo+(a*x)*exp(-b*x),aes(colour = 'Ricker: y=229.9+(85.6x)exp(-0.037x); AIC=1613.5 '), se=F, start=list(Bo=100, a=138, b=0.048), linetype = 1, size=1) + stat_smooth(method="nlsLM", formula = y ~ k/(1+((k-Bo)/Bo)*exp(-r*x)),aes(colour = 'Logistic: y=1046/(1+((1046-268.2)/268.2)exp(-0.244x)); AIC=1614.3' ),
+se=F,start=list(k=1050,Bo=138,r=0.3), linetype = 2, size=1) + stat_smooth(method="nlsLM", formula = y ~ k+(Bo-k)*exp(-r*x),aes(colour = 'Asymtote: y=1056+(177.8-1056)exp(-0.141x); AIC=1614.9'),se=F,start=list(k=1150,Bo=138,r=0.3), linetype = 3, size=1)+ theme_bw() + theme(axis.text.x = element_text(colour="grey20",size=13,hjust=.5,vjust=.5,face="plain"),
+axis.text.y = element_text(colour="grey20",size=13,face="plain"),  
+axis.title.x = element_text(colour="grey20",size=13,hjust=.5,vjust=0,face="plain"), axis.title.y = element_text(colour="grey20",size=13,hjust=.5,vjust=.5,face="plain"),legend.key = element_blank(),
+legend.justification=c(0,1),legend.position=c(0,1)
+, legend.background = element_rect(fill=("transparent")),panel.border = element_rect(colour = "black", size=0.9), panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black", size = 0.5)) + scale_y_continuous("Biomass, kg/ha") + scale_x_continuous("Time, years")+ scale_colour_brewer(name = 'Trendlines', palette = 'Set2')
+
+dev.off()
+
+ 
