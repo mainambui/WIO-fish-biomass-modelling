@@ -1,0 +1,158 @@
+#modelling and spatially predicting fish biomass
+#June 2015 final analysis
+#Joseph Maina
+
+rm(list-ls())
+library(gam)
+library(mgcv)
+library(lme4)
+library(MASS)
+library(lattice)
+library(gamm4)
+library(MuMIn)
+
+
+setwd("~/Dropbox/fishbiomassrecoveryplan/FishBiomass/Recovery_biomass_model_v3/BiomassModel/")
+biom_all<-read.csv("fishbiomallwio1.csv")
+#remove extreme high biomass sites
+biom_ta<-subset(biom_ta, ave_biomas<20000)
+
+#visualize biomass against distance
+#data preparation
+library(ggplot2)
+PLD<-ggplot(biom_all, aes(Distance.km, ave_biomas)) + geom_smooth() + geom_point() +geom_vline(xintercept = 500)
+biom_all$ln.av.biomas<-log(biom_all$ave_biomas)
+biom_all$lnDistance.km<-log(biom_all$Distance.km)
+biom_all$Year<-as.factor(biom_all$Year)
+
+
+#Global model
+#using mgcv and all wio data with Year as a random effect
+fish.mod<-uGamm(ln.av.biomas ~ s(lnDistance.km, k=5, by=Management), random=list(Year=~1),method="ML", data = biom_all)
+fish.mod$gam$formula<-ln.av.biomas ~ s(lnDistance.km, k=5, by=Management) + s(lnDistance.km, k=5, by=fishing)+ s(pop_condition_d100, k=5, by=Management) + s(pop_condition_d100, k=5, by= fishing) + s(pop_condition_d100, k=5)+ s(pop_condition_d100,lnDistance.km, k=5) + s(lnDistance.km, k=5) + fishing*Management + s(SST_2p, k=5) + s(SST_50p, k=5) + s(SST_98p, k=5)
+system.time(dr.mod<-dredge(fish.mod, extra=list("R^2","adjR^2"),subset = !({s(SST_2p, k=5)} && {s(SST_50p, k=5)}) && !({s(SST_2p, k=5)} && {s(SST_98p, k=5)})&& !({s(SST_50p, k=5)} && {s(SST_98p, k=5)}), trace=2))
+
+drModData<-data.frame(dr.mod)
+write.csv(drModData, "BiomassModelSelection_Apr2016.csv")
+save.image('dr.mod_Apr2016.RData')
+
+#get top models and model average
+confset.95p <- get.models(dr.mod, cumsum(weight) <= .95)
+avgmod.95p <- model.avg(confset.95p)
+
+#predict to wio surface
+#load thre wio planning units
+list.files(pattern=".csv")
+biom.pred<-read.csv("wioplanningunitsattributes.csv")
+biom.pred$lnDistance.km<-log(biom.pred$Distance.km+1)
+new.data<-as.data.frame(biom.pred)
+
+#predict biomass using the averaged model
+biom.pred.topmod<-cbind(new.data,as.data.frame(wio.biom.pred.avg),exp(as.data.frame(wio.biom.pred.avg)) )
+colnames(biom.pred.topmod)<-c("Join_Count", "name","puid","SPECIES","POINT_X","POINT_Y","name_1" ,"fishing","Management" ,"Distance" , "Distance.km" ,"pop_condition_d100","pop_condition_d500" ,"popcntxy" ,"popcnt10kmean" ,"popcnt10kmax" ,"Country","Lon","Lat","SST_2p","SST_50p","SST_98p","lnDistance.km" ,"fit" ,"se.fit"  ,"pred.fit" ,"se.pred.fit")
+write.csv(biom.pred.topmod,"biompredtopmod.csv" )
+
+#Time to recoivery precdictions
+#######################################
+###sustainability targets_450
+setwd("~/Dropbox/fishbiomassrecoveryplan/FishBiomass/Recovery_biomass_model_v3/BiomassModel/")
+biom.pred.topmod<-read.csv("biompredtopmod.csv")
+
+logistic1 <-  function(y)(1/-0.244)*log((1150/y -1)/((1150-35)/35))
+biom.pred.topmod$logis450.t2r<-logistic1(450-(biom.pred.topmod$pred.fit))
+
+Asymtote1<- function(y) (1/-0.141)*log((y - 1150)/(35-1150)) 
+biom.pred.topmod$asym450.t2r<-Asymtote1  (450-(biom.pred.topmod$pred.fit) )
+
+###sustainability targets_600
+logistic2 <-  function(y)(1/-0.244)*log((1150/y -1)/((1150-35)/35))
+biom.pred.topmod$logis600.t2r<-logistic2(600-(biom.pred.topmod$pred.fit))
+
+Asymtote2<- function(y) (1/-0.141)*log((y - 1150)/(35-1150)) 
+biom.pred.topmod$asym600.t2r<-Asymtote2(600-(biom.pred.topmod$pred.fit) )
+
+###conservation targets_1150
+
+logistic3<-  function(y)(1/-0.244)*log((1150/y -1)/((1150-35)/35))
+biom.pred.topmod$logis1150.t2r<-logistic3(1150-(biom.pred.topmod$pred.fit))
+ 
+Asymtote3<- function(y) (1/-0.141)*log((y - 1150)/(35-1150)) 
+biom.pred.topmod$asym1150.t2r<-Asymtote3(1150-(biom.pred.topmod$pred.fit) )
+write.csv(biom.pred.topmod,"biompredtopmodt2r.csv" )
+
+
+
+
+##paper figure 1
+require(ggplot2)
+require(scales)
+library(gridExtra)
+library(reshape2)
+setwd("~/Dropbox/fishbiomassrecoveryplan/FishBiomass/Recovery_biomass_model_v3/BiomassModel/")
+biom_all<-read.csv("fishbiomallwio1.csv")
+
+
+#final Figures
+##we now fit a GAM adding a penalized smoother with x
+p<-ggplot(biom_all,aes(lnmarketpop, ln.av.biomas)) + geom_point() + stat_smooth(method = "gam", formula = y ~ s(x, k=5), size = 1) + labs(title=("(a)")) + theme_bw() + theme(panel.border = element_rect(colour = "black"), panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), plot.title = element_text(hjust = 0, size=12, face="bold"),  text = element_text(size=12), axis.title.x=element_text(vjust=0.1)) + scale_y_continuous("Biomass (log, kg/ha)") + scale_x_continuous("Population (log)")
+
+d<-ggplot(biom_all,aes(lnDistance.km, ln.av.biomas)) + geom_point() + stat_smooth(method = "gam", formula = y ~ s(x, k=5), size = 1) + labs(title=("(b)")) + theme_bw() + theme(panel.border = element_rect(colour = "black"), panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), plot.title = element_text(hjust = 0, size=12, face="bold"),  text = element_text(size=12), axis.title.x=element_text(vjust=0.1)) + scale_y_continuous("Biomass (log, kg/ha)") + scale_x_continuous("Distance (log, km)")
+
+##boxplot graphics with the mean, the mean + standard deviation, the mean - S.D., the min and the max values.
+#Function to calculate mean and SD
+
+min.mean.sd.max <- function(x) {
+  r <- c(min(x), mean(x) - sd(x), mean(x), mean(x) + sd(x), max(x))
+  names(r) <- c("ymin", "lower", "middle", "upper", "ymax")
+  r
+}
+
+m<-ggplot(aes(y =ln.av.biomas, x = factor(Management)), data = biom_all) + stat_summary(fun.data = min.mean.sd.max, geom = "boxplot") + theme_bw() + theme(panel.border = element_rect(colour = "black"), panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), plot.title = element_text(hjust = 0, size=12, face="bold"),  text = element_text(size=12),axis.title.y = element_text(size=12), axis.title.x=element_text(vjust=0.1))+ geom_jitter(aes(colour=fishing), aesposition=position_jitter(width=.2), size=3, alpha=0.4) + labs(title=("(d)"), colour="Fishing")+ xlab("Management type") +  scale_y_continuous("Biomass (log, kg/ha)") + scale_x_discrete(labels=c("ADGR", "HCC", "LCYC", "MDGR", "NGR", "R"))
+
+f<-ggplot(aes(y =ln.av.biomas, x = factor(fishing)), data = biom_all) + stat_summary(fun.data = min.mean.sd.max, geom = "boxplot") + geom_jitter(aes(colour=Management), position=position_jitter(width=.2), size=3,alpha=0.4) + labs(title=("(e)"), colour="Management type")+ theme_bw() + theme(panel.border = element_rect(colour = "black"), panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), plot.title = element_text(hjust = 0, size=12, face="bold"), text = element_text(size=12),axis.title.y = element_text(size=12), axis.title.x=element_text(vjust=0.1))+ xlab("Fishing") +  scale_y_continuous("Biomass (log, kg/ha)") 
+
+
+s<-ggplot(biom_all,aes(SST_98p, ln.av.biomas)) + geom_point() + stat_smooth(method = "gam", formula = y ~ s(x, k=5), size = 1) + labs(title=("(c)")) + theme_bw() + theme(panel.border = element_rect(colour = "black"), panel.grid.major = element_blank(),panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), plot.title = element_text(hjust = 0, size=12, face="bold"),  text = element_text(size=12), axis.title.x=element_text(vjust=0.1)) + scale_y_continuous("Biomass (log, kg/ha)") + scale_x_continuous("Max SST (deg.C)")
+
+#a<-grid.draw(cbind(
+#            rbind(ggplotGrob(p), ggplotGrob(d),size="last"),
+#            rbind(ggplotGrob(m), ggplotGrob(f), size="last"),
+#            size="last"))
+
+
+lay_out = function(...) {    
+    x <- list(...)
+    n <- max(sapply(x, function(x) max(x[[2]])))
+    p <- max(sapply(x, function(x) max(x[[3]])))
+    grid::pushViewport(grid::viewport(layout = grid::grid.layout(n, p)))    
+
+    for (i in seq_len(length(x))) {
+        print(x[[i]][[1]], vp = grid::viewport(layout.pos.row = x[[i]][[2]], 
+            layout.pos.col = x[[i]][[3]]))
+    }
+}
+
+cairo_ps(file='Figure1.eps', width=7, height=7)
+lay_out(list(p, 1, 1),   
+        list(d, 1, 2),    
+         list(s, 1,3), 
+          list(m, 2,1:2),
+           list(f, 3,1:2))
+dev.off()
+
+
+pdf("Figure1.pdf", width = 7, height = 7)           
+lay_out(list(p, 1, 1),   
+        list(d, 1, 2),    
+         list(s, 1,3), 
+          list(m, 2,1:2),
+           list(f, 3,1:2))
+dev.off()
+
+tiff("Figure1.tiff", width = 7, height = 7, units = 'in',res = 300)
+lay_out(list(p, 1, 1),   
+        list(d, 1, 2),    
+         list(s, 1,3), 
+          list(m, 2,1:3),
+           list(f, 3,1:3))
+dev.off()
